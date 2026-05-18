@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     app_description: str = "A starter FastAPI service for a finance-focused RAG project."
     api_v1_prefix: str = "/api/v1"
+    app_host: str = "127.0.0.1"
+    app_port: int = 8000
+    log_level: str = "INFO"
 
     model_config = SettingsConfigDict(
         env_file=".env",

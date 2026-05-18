@@ -147,3 +147,37 @@ uvicorn app.main:app --reload
 
 - `http://127.0.0.1:8000/api/v1/health`
 - `http://127.0.0.1:8000/docs`
+
+## 11. Day5 新增内容
+
+Day5 在 Day4 的基础上补了三块工程能力：
+
+1. 日志配置
+2. 统一异常处理
+3. 更完整的基础配置
+
+新增文件：
+
+1. `app/core/logging.py`
+2. `app/core/exceptions.py`
+3. `app/core/handlers.py`
+4. `app/schemas/error.py`
+5. `docs/day5-notes.md`
+6. `.env.example`
+
+主要变化：
+
+1. 应用启动时会初始化日志配置
+2. 已注册统一异常处理器
+3. 已补充 `app_host`、`app_port`、`log_level` 配置
+4. 健康检查接口已开始写入日志
+
+## 12. Day5 的价值
+
+Day5 不是增加业务功能，而是让服务更像一个真正可维护的后端项目。
+
+你后面做 `/chat`、`/documents`、`/ask` 时，会直接受益于这些基础能力：
+
+1. 出错时返回结构更统一
+2. 日志更容易定位问题
+3. 配置不会到处写死
