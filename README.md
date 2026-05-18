@@ -106,3 +106,44 @@ financial-rag/
 - 后续开发路径明确
 
 这些内容已经具备，可以直接进入 Day4。
+
+## 9. Day4 新增内容
+
+Day4 已经补上了 FastAPI 最小服务骨架，当前新增内容包括：
+
+1. `requirements.txt`：记录基础依赖
+2. `app/main.py`：应用入口
+3. `app/api/v1/router.py`：v1 路由聚合
+4. `app/api/v1/health.py`：健康检查接口
+5. `app/core/config.py`：配置管理
+6. `app/schemas/health.py`：响应模型
+7. `docs/day4-notes.md`：Day4 说明文档
+
+当前最小接口为：
+
+- `GET /api/v1/health`
+
+返回示例：
+
+```json
+{
+  "status": "ok",
+  "service": "financial-rag"
+}
+```
+
+## 10. Day4 启动命令
+
+等本机安装可用 Python 后，执行：
+
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
+```
+
+启动后可访问：
+
+- `http://127.0.0.1:8000/api/v1/health`
+- `http://127.0.0.1:8000/docs`
