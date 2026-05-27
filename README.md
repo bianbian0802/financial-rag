@@ -181,3 +181,45 @@ Day5 不是增加业务功能，而是让服务更像一个真正可维护的后
 1. 出错时返回结构更统一
 2. 日志更容易定位问题
 3. 配置不会到处写死
+
+## 13. Day6 新增内容
+
+Day6 的目标是完成第一次真实模型调用闭环。
+
+新增文件：
+
+1. `app/schemas/chat.py`
+2. `app/services/chat_service.py`
+3. `app/api/v1/chat.py`
+
+更新内容：
+
+1. `requirements.txt` 新增 `httpx`
+2. `app/core/config.py` 新增模型调用配置
+3. `app/api/v1/router.py` 注册 `/chat` 路由
+4. `.env.example` 新增模型环境变量模板
+5. `docs/day6-notes.md` 记录 Day6 说明
+
+当前新增接口：
+
+- `POST /api/v1/chat`
+
+请求示例：
+
+```json
+{
+  "message": "请介绍一下RAG是什么"
+}
+```
+
+## 14. Day6 运行前准备
+
+在本地实际调模型前，你需要先在 `.env` 中填写：
+
+```env
+LLM_API_KEY=your_api_key
+LLM_BASE_URL=your_openai_compatible_base_url
+LLM_CHAT_MODEL=your_model_name
+```
+
+如果不配置 `LLM_API_KEY`，接口会返回统一错误响应。
