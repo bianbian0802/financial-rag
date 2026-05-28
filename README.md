@@ -54,6 +54,7 @@ financial-rag/
   .gitignore
   docs/
     day3-notes.md
+    day8-notes.md
   app/
     api/
       v1/
@@ -69,6 +70,8 @@ financial-rag/
       .gitkeep
     utils/
       .gitkeep
+  frontend/
+    src/
   tests/
     .gitkeep
   scripts/
@@ -94,7 +97,9 @@ financial-rag/
 1. Day4：搭 `FastAPI` 最小服务
 2. Day5：补日志、异常处理、配置管理
 3. Day6：接入模型 API，完成 `/chat` 接口
-4. Day7 以后：做文档上传、解析、切片、检索
+4. Day7：补流式返回
+5. Day8：接入 Vue 前端聊天页
+6. Day9 以后：做文档上传、解析、切片、检索
 
 ## 8. 当前阶段的验收标准
 
@@ -223,3 +228,62 @@ LLM_CHAT_MODEL=your_model_name
 ```
 
 如果不配置 `LLM_API_KEY`，接口会返回统一错误响应。
+
+## 15. Day7 新增内容
+
+Day7 的目标是让聊天接口支持流式返回。
+
+本次新增能力：
+
+1. `POST /api/v1/chat` 支持 `stream=true`
+2. 流式响应类型为 `text/event-stream`
+3. 保持原有普通 JSON 返回不变
+4. 增加本地最小测试覆盖普通与流式模式
+
+流式请求示例：
+
+```json
+{
+  "message": "请用一句话解释 RAG",
+  "stream": true
+}
+```
+
+本地使用 Ollama 时，可以参考：
+
+```env
+LLM_BASE_URL=http://127.0.0.1:11434/v1
+LLM_API_KEY=ollama
+LLM_CHAT_MODEL=qwen2.5:3b
+LLM_TIMEOUT_SECONDS=60
+```
+
+更详细的 Day7 说明见 `docs/day7-notes.md`。
+
+## 16. Day8 新增内容
+
+Day8 的目标是把聊天能力接到独立前端工程中。
+
+本次新增能力：
+
+1. 新增 `frontend/`，使用 `Vue 3 + Vite + TypeScript`
+2. 实现一个居中的扁平化聊天页面
+3. 前端接入 `/api/v1/chat`，支持普通返回和流式返回
+4. 支持多轮上下文，前端会通过 `history` 传递历史消息
+5. 使用 `Vite` 代理本地开发请求
+
+前端启动命令：
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+默认访问地址：
+
+```text
+http://127.0.0.1:5173
+```
+
+更详细的 Day8 说明见 `docs/day8-notes.md`。

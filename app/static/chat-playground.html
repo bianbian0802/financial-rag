@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Financial RAG Chat Playground</title>
+  <style>
+    :root {
+      --bg: #f6efe5;
+      --bg-soft: #fbf7f2;
+      --panel: #fffaf4;
+      --panel-muted: #f4ece1;
+      --line: #e8ddcf;
+      --line-strong: #dccab3;
+      --text: #2f261d;
+      --muted: #7b6c5b;
+      --accent: #c96a39;
+      --accent-strong: #ae5528;
+      --assistant: #f3eadf;
+      --user: #d96f3d;
+      --user-text: #fffaf4;
+      --success: #2b7a5a;
+      --error: #a13e32;
+      --shadow: 0 10px 30px rgba(75, 50, 33, 0.06);
+      --radius-xl: 28px;
+      --radius-lg: 22px;
+      --radius-md: 18px;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      height: 100%;
+    }
+
+    body {
+      margin: 0;
+      font-family: "Aptos", "Microsoft YaHei UI", "Noto Sans SC", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(201, 106, 57, 0.16), transparent 24%),
+        radial-gradient(circle at bottom right, rgba(67, 124, 106, 0.12), transparent 24%),
+        linear-gradient(180deg, var(--bg-soft) 0%, var(--bg) 100%);
+    }
+
+    .app {
+      min-height: 100%;
+      display: grid;
+      place-items: center;
+      padding: 24px 16px;
+    }
+
+    .chat-shell {
+      width: min(920px, 100%);
+      height: min(88vh, 920px);
+      min-height: 720px;
+      display: grid;
+      grid-template-rows: auto auto minmax(0, 1fr) auto;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 32px;
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 20px;
+      padding: 24px 24px 18px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 250, 244, 0.92);
+    }
+
+    .brand {
+      display: grid;
+      gap: 8px;
+    }
+
+    .eyebrow {
+      width: fit-content;
+      padding: 6px 12px;
+      border-radius: 999px;
+      background: rgba(201, 106, 57, 0.1);
+      color: var(--accent-strong);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: clamp(26px, 4vw, 36px);
+      line-height: 1.05;
+      letter-spacing: -0.04em;
+    }
+
+    .subtitle {
+      margin: 0;
+      max-width: 560px;
+      color: var(--muted);
+      font-size: 14px;
+      line-height: 1.7;
+    }
+
+    .utility {
+      display: grid;
+      gap: 12px;
+      justify-items: end;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 9px 14px;
+      border-radius: 999px;
+      background: rgba(43, 122, 90, 0.12);
+      color: var(--success);
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .status-pill.error {
+      background: rgba(161, 62, 50, 0.12);
+      color: var(--error);
+    }
+
+    .utility-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .endpoint {
+      padding: 8px 12px;
+      border-radius: 999px;
+      border: 1px solid var(--line);
+      color: var(--muted);
+      font-size: 12px;
+      background: var(--bg-soft);
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--line);
+      background: #fffdf9;
+    }
+
+    .toolbar-left,
+    .toolbar-right {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      background: var(--panel-muted);
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .toggle input {
+      width: 18px;
+      height: 18px;
+      accent-color: var(--accent);
+    }
+
+    .system-prompt {
+      width: min(360px, 100%);
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: var(--bg-soft);
+      color: var(--text);
+      font: inherit;
+    }
+
+    .system-prompt:focus,
+    .composer-input:focus {
+      outline: none;
+      border-color: var(--line-strong);
+      box-shadow: 0 0 0 3px rgba(201, 106, 57, 0.12);
+    }
+
+    button {
+      border: 0;
+      border-radius: 16px;
+      padding: 12px 16px;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 140ms ease, opacity 140ms ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+    }
+
+    button:disabled {
+      cursor: not-allowed;
+      opacity: 0.56;
+      transform: none;
+    }
+
+    .ghost-btn {
+      background: var(--panel-muted);
+      color: var(--text);
+    }
+
+    .primary-btn {
+      background: var(--accent);
+      color: var(--user-text);
+    }
+
+    .conversation {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 280px;
+      min-height: 0;
+      background: linear-gradient(180deg, #fffdf9 0%, #fff9f2 100%);
+    }
+
+    .messages-pane {
+      min-height: 0;
+      padding: 22px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .empty-state {
+      margin: auto;
+      width: min(520px, 100%);
+      padding: 24px;
+      border: 1px dashed var(--line-strong);
+      border-radius: 24px;
+      background: rgba(255, 249, 242, 0.8);
+      text-align: center;
+    }
+
+    .empty-state h2 {
+      margin: 0 0 8px;
+      font-size: 24px;
+    }
+
+    .empty-state p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.7;
+      font-size: 14px;
+    }
+
+    .message-row {
+      display: flex;
+    }
+
+    .message-row.user {
+      justify-content: flex-end;
+    }
+
+    .message-row.assistant {
+      justify-content: flex-start;
+    }
+
+    .message-card {
+      max-width: min(78%, 620px);
+      display: grid;
+      gap: 8px;
+    }
+
+    .message-meta {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .message-bubble {
+      padding: 14px 16px;
+      border-radius: 20px;
+      border: 1px solid var(--line);
+      background: var(--assistant);
+      white-space: pre-wrap;
+      word-break: break-word;
+      line-height: 1.7;
+      font-size: 15px;
+    }
+
+    .message-row.user .message-bubble {
+      border-color: rgba(0, 0, 0, 0.02);
+      background: var(--user);
+      color: var(--user-text);
+      border-bottom-right-radius: 8px;
+    }
+
+    .message-row.assistant .message-bubble {
+      border-bottom-left-radius: 8px;
+    }
+
+    .message-bubble.placeholder {
+      color: var(--muted);
+    }
+
+    .message-bubble.error {
+      background: #fff0ec;
+      border-color: rgba(161, 62, 50, 0.22);
+      color: var(--error);
+    }
+
+    .debug-pane {
+      min-height: 0;
+      border-left: 1px solid var(--line);
+      background: #f9f3ea;
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+
+    .debug-head {
+      padding: 18px 18px 12px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .debug-head h2 {
+      margin: 0 0 6px;
+      font-size: 16px;
+    }
+
+    .debug-head p {
+      margin: 0;
+      color: var(--muted);
+      line-height: 1.6;
+      font-size: 13px;
+    }
+
+    .debug-log {
+      margin: 0;
+      padding: 16px 18px 24px;
+      overflow: auto;
+      font-family: "Cascadia Code", "Consolas", monospace;
+      font-size: 12px;
+      line-height: 1.65;
+      color: #4f4135;
+      white-space: pre-wrap;
+    }
+
+    .composer {
+      display: grid;
+      gap: 12px;
+      padding: 18px 20px 20px;
+      border-top: 1px solid var(--line);
+      background: #fffdf9;
+    }
+
+    .composer textarea {
+      width: 100%;
+      min-height: 76px;
+      max-height: 180px;
+      resize: vertical;
+      padding: 16px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--bg-soft);
+      color: var(--text);
+      font: inherit;
+      line-height: 1.65;
+    }
+
+    .composer-bottom {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .composer-hint {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .composer-actions {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .streaming-dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: currentColor;
+      opacity: 0.5;
+      animation: pulse 1.1s infinite;
+    }
+
+    @keyframes pulse {
+      0%,
+      100% {
+        transform: scale(0.8);
+        opacity: 0.45;
+      }
+      50% {
+        transform: scale(1);
+        opacity: 1;
+      }
+    }
+
+    @media (max-width: 960px) {
+      .chat-shell {
+        min-height: 100vh;
+        height: 100vh;
+        border-radius: 0;
+      }
+
+      .conversation {
+        grid-template-columns: 1fr;
+      }
+
+      .debug-pane {
+        border-left: 0;
+        border-top: 1px solid var(--line);
+        max-height: 220px;
+      }
+    }
+
+    @media (max-width: 680px) {
+      .app {
+        padding: 0;
+      }
+
+      .topbar,
+      .toolbar,
+      .composer {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+
+      .messages-pane {
+        padding: 16px;
+      }
+
+      .topbar {
+        flex-direction: column;
+      }
+
+      .utility {
+        width: 100%;
+        justify-items: start;
+      }
+
+      .utility-row {
+        justify-content: flex-start;
+      }
+
+      .system-prompt {
+        width: 100%;
+      }
+
+      .message-card {
+        max-width: 88%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="chat-shell">
+      <header class="topbar">
+        <div class="brand">
+          <div class="eyebrow">FINANCIAL RAG CHAT</div>
+          <h1>一个更像真实产品的流式对话页</h1>
+          <p class="subtitle">
+            这个页面直接请求 <code>/api/v1/chat</code>。默认使用流式返回，并把页面上的历史对话一并传给后端，
+            所以它已经不只是“测试按钮”，而是一个可以持续聊天的最小前端。
+          </p>
+        </div>
+
+        <div class="utility">
+          <div id="status" class="status-pill">状态：等待发送</div>
+          <div class="utility-row">
+            <span class="endpoint">POST /api/v1/chat</span>
+            <button id="clearChatButton" class="ghost-btn" type="button">清空会话</button>
+          </div>
+        </div>
+      </header>
+
+      <section class="toolbar">
+        <div class="toolbar-left">
+          <label class="toggle" for="streamMode">
+            <input id="streamMode" type="checkbox" checked />
+            流式返回
+          </label>
+          <span class="composer-hint">支持多轮上下文，历史消息会通过 <code>history</code> 一起提交。</span>
+        </div>
+
+        <div class="toolbar-right">
+          <input
+            id="systemPrompt"
+            class="system-prompt"
+            type="text"
+            placeholder="系统提示词（可选），例如：你是一名严谨的金融 AI 助手。"
+          />
+        </div>
+      </section>
+
+      <section class="conversation">
+        <div id="messagesPane" class="messages-pane">
+          <div id="emptyState" class="empty-state">
+            <h2>开始第一轮对话</h2>
+            <p>
+              输入一个问题后，页面会先显示你的消息，再把助手回复以流式方式逐段渲染出来。
+              这样你能清楚地看到多轮对话和 SSE 返回是怎么结合在一起的。
+            </p>
+          </div>
+        </div>
+
+        <aside class="debug-pane">
+          <div class="debug-head">
+            <h2>SSE / 调试日志</h2>
+            <p>这里会保留每次请求的状态和每一段 <code>data: ...</code> 事件，方便联调。</p>
+          </div>
+          <pre id="debugLog" class="debug-log">等待请求...</pre>
+        </aside>
+      </section>
+
+      <section class="composer">
+        <textarea
+          id="messageInput"
+          class="composer-input"
+          placeholder="输入你的问题。Enter 发送，Shift + Enter 换行。"
+        >请结合金融知识库场景，简洁解释一下 RAG 的作用。</textarea>
+
+        <div class="composer-bottom">
+          <span class="composer-hint">你看到的聊天记录会居中展示，当前页面默认优先演示流式返回。</span>
+          <div class="composer-actions">
+            <button id="clearInputButton" class="ghost-btn" type="button">清空输入</button>
+            <button id="sendButton" class="primary-btn" type="button">发送消息</button>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+
+  <script>
+    const chatEndpoint = "/api/v1/chat";
+    const messageInput = document.getElementById("messageInput");
+    const streamModeInput = document.getElementById("streamMode");
+    const systemPromptInput = document.getElementById("systemPrompt");
+    const sendButton = document.getElementById("sendButton");
+    const clearInputButton = document.getElementById("clearInputButton");
+    const clearChatButton = document.getElementById("clearChatButton");
+    const statusElement = document.getElementById("status");
+    const messagesPane = document.getElementById("messagesPane");
+    const emptyState = document.getElementById("emptyState");
+    const debugLog = document.getElementById("debugLog");
+
+    const conversationHistory = [];
+    let isSending = false;
+
+    /**
+     * Update the top status pill to reflect the current request state.
+     * @param {string} text The status message shown to the user.
+     * @param {boolean} isError Whether the current status represents an error.
+     */
+    function setStatus(text, isError = false) {
+      statusElement.textContent = `状态：${text}`;
+      statusElement.classList.toggle("error", isError);
+    }
+
+    /**
+     * Append a line into the debug log panel.
+     * @param {string} line The log line that should be appended.
+     */
+    function appendLog(line) {
+      if (debugLog.textContent === "等待请求...") {
+        debugLog.textContent = "";
+      }
+      debugLog.textContent += `${line}\n`;
+      debugLog.scrollTop = debugLog.scrollHeight;
+    }
+
+    /**
+     * Scroll the message pane to the latest message.
+     */
+    function scrollMessagesToBottom() {
+      messagesPane.scrollTop = messagesPane.scrollHeight;
+    }
+
+    /**
+     * Show or hide the initial empty state based on existing messages.
+     */
+    function syncEmptyState() {
+      emptyState.hidden = messagesPane.querySelector(".message-row") !== null;
+    }
+
+    /**
+     * Enable or disable composer actions while a request is in flight.
+     * @param {boolean} disabled Whether the composer should be disabled.
+     */
+    function setComposerDisabled(disabled) {
+      sendButton.disabled = disabled;
+      clearInputButton.disabled = disabled;
+      clearChatButton.disabled = disabled;
+      streamModeInput.disabled = disabled;
+      systemPromptInput.disabled = disabled;
+      messageInput.disabled = disabled;
+    }
+
+    /**
+     * Create a message bubble and append it into the conversation area.
+     * @param {"user"|"assistant"} role The role of the current message.
+     * @param {string} text The text shown inside the bubble.
+     * @param {boolean} isPlaceholder Whether the current message is a placeholder bubble.
+     * @returns {{body: HTMLDivElement, meta: HTMLDivElement}} The created message nodes.
+     */
+    function appendMessage(role, text, isPlaceholder = false) {
+      const row = document.createElement("div");
+      row.className = `message-row ${role}`;
+
+      const card = document.createElement("div");
+      card.className = "message-card";
+
+      const meta = document.createElement("div");
+      meta.className = "message-meta";
+      meta.textContent = role === "user" ? "你" : "助手";
+
+      const body = document.createElement("div");
+      body.className = "message-bubble";
+      if (isPlaceholder) {
+        body.classList.add("placeholder");
+      }
+      body.textContent = text;
+
+      card.append(meta, body);
+      row.append(card);
+      messagesPane.append(row);
+      syncEmptyState();
+      scrollMessagesToBottom();
+      return { body, meta };
+    }
+
+    /**
+     * Reset the debug log back to its initial placeholder text.
+     */
+    function resetLog() {
+      debugLog.textContent = "等待请求...";
+    }
+
+    /**
+     * Clear both the rendered chat messages and the stored conversation history.
+     */
+    function clearConversation() {
+      if (isSending) {
+        return;
+      }
+      conversationHistory.length = 0;
+      messagesPane.querySelectorAll(".message-row").forEach((node) => node.remove());
+      resetLog();
+      syncEmptyState();
+      setStatus("等待发送");
+      scrollMessagesToBottom();
+    }
+
+    /**
+     * Extract a readable error message from a failed response.
+     * @param {Response} response The fetch response.
+     * @returns {Promise<string>} The normalized error text.
+     */
+    async function buildErrorMessage(response) {
+      const contentType = response.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        const payload = await response.json();
+        return payload.message || payload.error_code || "请求失败。";
+      }
+      return await response.text();
+    }
+
+    /**
+     * Read an SSE response, append logs, and progressively update the assistant bubble.
+     * @param {Response} response The fetch response object.
+     * @param {HTMLDivElement} assistantBubble The DOM node that renders assistant text.
+     * @param {HTMLDivElement} assistantMeta The DOM node that renders assistant meta text.
+     * @returns {Promise<string>} The fully concatenated assistant reply.
+     */
+    async function consumeStream(response, assistantBubble, assistantMeta) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      let fullText = "";
+
+      assistantMeta.innerHTML = '助手 <span class="streaming-dot"></span> 流式返回中';
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) {
+          break;
+        }
+
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split("\n\n");
+        buffer = events.pop() || "";
+
+        for (const event of events) {
+          const dataLines = event
+            .split("\n")
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).trim());
+
+          if (!dataLines.length) {
+            continue;
+          }
+
+          const payload = dataLines.join("\n");
+          appendLog(`SSE -> ${payload}`);
+
+          if (payload === "[DONE]") {
+            assistantMeta.textContent = "助手";
+            return fullText;
+          }
+
+          const parsed = JSON.parse(payload);
+          if (parsed.error) {
+            throw new Error(parsed.error.message || "流式调用失败。");
+          }
+
+          const chunk = parsed.choices?.[0]?.delta?.content || "";
+          if (!chunk) {
+            continue;
+          }
+
+          fullText += chunk;
+          assistantBubble.classList.remove("placeholder");
+          assistantBubble.textContent = fullText;
+          scrollMessagesToBottom();
+        }
+      }
+
+      assistantMeta.textContent = "助手";
+      return fullText;
+    }
+
+    /**
+     * Build the request body for the current chat request.
+     * @param {string} message The latest user input.
+     * @returns {object} The JSON body sent to the backend.
+     */
+    function buildRequestBody(message) {
+      const body = {
+        message,
+        stream: streamModeInput.checked,
+        history: conversationHistory.slice(-12),
+      };
+
+      const systemPrompt = systemPromptInput.value.trim();
+      if (systemPrompt) {
+        body.system_prompt = systemPrompt;
+      }
+
+      return body;
+    }
+
+    /**
+     * Send a chat request and render the user/assistant conversation.
+     */
+    async function sendMessage() {
+      if (isSending) {
+        return;
+      }
+
+      const message = messageInput.value.trim();
+      if (!message) {
+        setStatus("请先输入问题", true);
+        return;
+      }
+
+      isSending = true;
+      setComposerDisabled(true);
+      setStatus(streamModeInput.checked ? "请求中，等待首段流..." : "请求中，等待完整回答...");
+      appendLog(`POST ${chatEndpoint}`);
+      appendLog(`history_count = ${conversationHistory.length}`);
+      appendLog(`stream = ${streamModeInput.checked}`);
+
+      appendMessage("user", message);
+      const assistantNodes = appendMessage("assistant", "正在等待模型返回...", true);
+      const requestBody = buildRequestBody(message);
+      messageInput.value = "";
+      messageInput.style.height = "";
+
+      try {
+        const response = await fetch(chatEndpoint, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(requestBody),
+        });
+
+        if (!response.ok) {
+          throw new Error(await buildErrorMessage(response));
+        }
+
+        let assistantReply = "";
+
+        if (streamModeInput.checked) {
+          assistantReply = await consumeStream(response, assistantNodes.body, assistantNodes.meta);
+          setStatus("流式完成");
+        } else {
+          const payload = await response.json();
+          assistantReply = payload.reply || "";
+          assistantNodes.body.classList.remove("placeholder");
+          assistantNodes.body.textContent = assistantReply || "模型没有返回内容。";
+          appendLog(`JSON -> ${JSON.stringify(payload, null, 2)}`);
+          setStatus("普通调用完成");
+        }
+
+        conversationHistory.push(
+          { role: "user", content: message },
+          { role: "assistant", content: assistantReply || "模型没有返回内容。" },
+        );
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : "未知错误";
+        assistantNodes.meta.textContent = "助手 / 错误";
+        assistantNodes.body.classList.remove("placeholder");
+        assistantNodes.body.classList.add("error");
+        assistantNodes.body.textContent = `请求失败：${messageText}`;
+        appendLog(`ERROR -> ${messageText}`);
+        setStatus("请求失败", true);
+      } finally {
+        isSending = false;
+        setComposerDisabled(false);
+        messageInput.focus();
+        scrollMessagesToBottom();
+      }
+    }
+
+    /**
+     * Clear the current composer input only.
+     */
+    function clearInput() {
+      if (isSending) {
+        return;
+      }
+      messageInput.value = "";
+      messageInput.focus();
+    }
+
+    sendButton.addEventListener("click", sendMessage);
+    clearInputButton.addEventListener("click", clearInput);
+    clearChatButton.addEventListener("click", clearConversation);
+    messageInput.addEventListener("keydown", (event) => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        sendMessage();
+      }
+    });
+  </script>
+</body>
+</html>

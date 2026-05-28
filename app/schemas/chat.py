@@ -1,6 +1,22 @@
 """Request and response schemas for chat-related endpoints."""
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+
+class ChatHistoryMessage(BaseModel):
+    """Single historical message forwarded to the model provider."""
+
+    role: Literal["user", "assistant"] = Field(
+        ...,
+        description="Role of the historical message in the conversation.",
+    )
+    content: str = Field(
+        ...,
+        min_length=1,
+        description="Text content of the historical conversation message.",
+    )
 
 
 class ChatRequest(BaseModel):
@@ -10,6 +26,14 @@ class ChatRequest(BaseModel):
     system_prompt: str | None = Field(
         default=None,
         description="Optional system prompt override for the current request.",
+    )
+    stream: bool = Field(
+        default=False,
+        description="Whether to return the model response as a server-sent event stream.",
+    )
+    history: list[ChatHistoryMessage] = Field(
+        default_factory=list,
+        description="Optional prior conversation messages used to maintain context.",
     )
 
 
