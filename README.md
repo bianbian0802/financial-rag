@@ -55,6 +55,7 @@ financial-rag/
   docs/
     day3-notes.md
     day8-notes.md
+    day9-notes.md
   app/
     api/
       v1/
@@ -99,7 +100,8 @@ financial-rag/
 3. Day6：接入模型 API，完成 `/chat` 接口
 4. Day7：补流式返回
 5. Day8：接入 Vue 前端聊天页
-6. Day9 以后：做文档上传、解析、切片、检索
+6. Day9：做文档上传入口
+7. Day10 以后：做文档解析、切片、检索
 
 ## 8. 当前阶段的验收标准
 
@@ -287,3 +289,25 @@ http://127.0.0.1:5173
 ```
 
 更详细的 Day8 说明见 `docs/day8-notes.md`。
+
+## 17. Day9 新增内容
+
+Day9 的目标是让知识文档先进入系统。
+
+本次新增能力：
+
+1. 新增 `POST /api/v1/documents/upload`
+2. 支持上传 `pdf / md / txt / doc / docx`
+3. 上传时按块写盘，避免一次性读取大文件
+4. 默认支持最高 `25MB` 上传，覆盖 `20MB` 级别 Word 文件
+5. 超限时自动删除半成品文件
+
+配置示例：
+
+```env
+DOCUMENTS_STORAGE_DIR=data/documents
+DOCUMENTS_MAX_UPLOAD_SIZE_MB=25
+DOCUMENTS_CHUNK_SIZE_BYTES=1048576
+```
+
+更详细的 Day9 说明见 `docs/day9-notes.md`。

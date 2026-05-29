@@ -15,6 +15,9 @@ class Settings(BaseSettings):
     app_host: str = "127.0.0.1"
     app_port: int = 8000
     log_level: str = "INFO"
+    documents_storage_dir: str = "data/documents"
+    documents_max_upload_size_mb: int = 25
+    documents_chunk_size_bytes: int = 1048576
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
     llm_chat_model: str = "gpt-4o-mini"
