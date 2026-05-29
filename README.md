@@ -56,6 +56,7 @@ financial-rag/
     day3-notes.md
     day8-notes.md
     day9-notes.md
+    day10-notes.md
   app/
     api/
       v1/
@@ -311,3 +312,26 @@ DOCUMENTS_CHUNK_SIZE_BYTES=1048576
 ```
 
 更详细的 Day9 说明见 `docs/day9-notes.md`。
+
+## 18. Day10 新增内容
+
+Day10 的目标是把“已上传文件”真正推进到“可被后续切片和检索使用的纯文本”。
+本次新增能力：
+1. 新增 `POST /api/v1/documents/{document_id}/parse`
+2. 上传成功后自动保存本地元数据，后续可直接通过 `document_id` 找回文档
+3. 支持解析 `txt / md / pdf / docx`
+4. 解析结果会落盘到 `data/documents/parsed/*.json`
+5. 返回解析预览、字符数、解析器名称等信息，方便继续做 Day11 切片
+
+当前说明：
+1. `.doc` 旧版 Word 文件仍允许上传
+2. 但 Day10 暂不直接解析 `.doc`
+3. 如果遇到 `.doc`，接口会明确提示先转成 `.docx`
+
+解析结果 JSON 中会包含：
+1. 文档基础信息
+2. 解析后的完整文本 `extracted_text`
+3. 预览文本 `preview_text`
+4. 后续切片可直接复用的 `parsed_output_path`
+
+更详细的 Day10 说明见 `docs/day10-notes.md`。

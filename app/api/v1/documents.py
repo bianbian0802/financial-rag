@@ -3,7 +3,7 @@
 from fastapi import APIRouter, Depends, File, UploadFile
 
 from app.core.config import Settings, get_settings
-from app.schemas.document import DocumentUploadResponse
+from app.schemas.document import DocumentParseResponse, DocumentUploadResponse
 from app.services.document_service import DocumentService
 
 router = APIRouter()
@@ -25,3 +25,16 @@ async def upload_document(
 ) -> DocumentUploadResponse:
     """Validate and store a supported source document for downstream processing."""
     return await service.save_upload(file)
+
+
+@router.post(
+    "/documents/{document_id}/parse",
+    response_model=DocumentParseResponse,
+    summary="Parse an uploaded document into plain text",
+)
+def parse_document(
+    document_id: str,
+    service: DocumentService = Depends(get_document_service),
+) -> DocumentParseResponse:
+    """Load a previously uploaded document and extract plain text for later RAG stages."""
+    return service.parse_document(document_id)
