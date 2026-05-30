@@ -57,6 +57,7 @@ financial-rag/
     day8-notes.md
     day9-notes.md
     day10-notes.md
+    day11-notes.md
   app/
     api/
       v1/
@@ -335,3 +336,29 @@ Day10 的目标是把“已上传文件”真正推进到“可被后续切片�
 4. 后续切片可直接复用的 `parsed_output_path`
 
 更详细的 Day10 说明见 `docs/day10-notes.md`。
+
+## 19. Day11 新增内容
+
+Day11 的目标是把 Day10 的解析文本进一步整理成“可用于向量化和检索”的切片结果。
+本次新增能力：
+1. 新增 `POST /api/v1/documents/{document_id}/chunk`
+2. 直接读取 Day10 产出的解析 JSON，不重复解析原始文件
+3. 做轻量文本清洗，统一空白和换行
+4. 按字符长度切片，并支持相邻 chunk 重叠
+5. 优先尝试在段落、换行、句号附近断开，减少生硬切断
+6. 切片结果落盘到 `data/documents/chunks/*.json`
+
+当前新增配置：
+```env
+DOCUMENT_CHUNK_SIZE=800
+DOCUMENT_CHUNK_OVERLAP=120
+DOCUMENT_CHUNK_PREVIEW_LIMIT=180
+```
+
+切片结果 JSON 中会包含：
+1. chunk 总数
+2. 每个 chunk 的文本内容
+3. 每个 chunk 的字符长度
+4. 每个 chunk 在原清洗文本中的起止位置
+
+更详细的 Day11 说明见 `docs/day11-notes.md`。

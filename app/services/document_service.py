@@ -15,6 +15,8 @@ from pypdf import PdfReader
 from app.core.config import Settings
 from app.core.exceptions import AppException
 from app.schemas.document import (
+    DocumentChunk,
+    DocumentChunkResponse,
     DocumentParseResponse,
     DocumentUploadResponse,
     ParsedDocumentRecord,
@@ -30,6 +32,7 @@ class DocumentService:
     supported_extensions = {".pdf", ".md", ".txt", ".doc", ".docx"}
     metadata_directory_name = "metadata"
     parsed_directory_name = "parsed"
+    chunks_directory_name = "chunks"
     preview_text_limit = 240
 
     def __init__(self, settings: Settings) -> None:
@@ -159,6 +162,57 @@ class DocumentService:
 
         return DocumentParseResponse.model_validate(parsed_record.model_dump())
 
+    def chunk_document(self, document_id: str) -> DocumentChunkResponse:
+        """Load a parsed document, clean the text, and split it into retrieval chunks."""
+        parsed_record = self._load_parsed_document(document_id)
+        cleaned_text = self._clean_text_for_chunking(parsed_record.extracted_text)
+        if not cleaned_text:
+            raise AppException(
+                message="The parsed document does not contain usable text for chunking.",
+                status_code=422,
+                error_code="DOCUMENT_CHUNK_EMPTY",
+                details={"document_id": document_id},
+            )
+
+        chunk_size = self.settings.document_chunk_size
+        chunk_overlap = self.settings.document_chunk_overlap
+        self._validate_chunk_settings(chunk_size, chunk_overlap)
+
+        chunks = self._split_text_into_chunks(
+            document_id=document_id,
+            cleaned_text=cleaned_text,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+        chunks_directory = self._get_chunks_directory()
+        chunks_directory.mkdir(parents=True, exist_ok=True)
+        chunks_output_path = chunks_directory / f"{document_id}.json"
+        chunked_at = datetime.now(UTC)
+
+        chunk_response = DocumentChunkResponse(
+            document_id=document_id,
+            source_parsed_output_path=parsed_record.parsed_output_path,
+            chunk_count=len(chunks),
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            cleaned_char_count=len(cleaned_text),
+            chunks_output_path=str(chunks_output_path.as_posix()),
+            status="chunked",
+            chunked_at=chunked_at,
+            chunks=chunks,
+        )
+        self._write_json_file(chunks_output_path, chunk_response.model_dump(mode="json"))
+
+        logger.info(
+            "Document %s chunked successfully into %s chunks with size=%s overlap=%s.",
+            document_id,
+            len(chunks),
+            chunk_size,
+            chunk_overlap,
+        )
+
+        return chunk_response
+
     def _validate_filename(self, filename: str | None) -> None:
         """Ensure the client provided a supported filename before reading any content."""
         if not filename:
@@ -246,6 +300,28 @@ class DocumentService:
         )
         self._write_document_metadata(reconstructed_metadata)
         return reconstructed_metadata
+
+    def _load_parsed_document(self, document_id: str) -> ParsedDocumentRecord:
+        """Load the persisted parsed document record produced by the Day10 parse step."""
+        parsed_output_path = self._get_parsed_directory() / f"{document_id}.json"
+        if not parsed_output_path.exists():
+            raise AppException(
+                message="No parsed document was found for the provided document ID.",
+                status_code=404,
+                error_code="DOCUMENT_PARSED_NOT_FOUND",
+                details={"document_id": document_id},
+            )
+
+        try:
+            parsed_payload = json.loads(parsed_output_path.read_text(encoding="utf-8"))
+            return ParsedDocumentRecord.model_validate(parsed_payload)
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AppException(
+                message="Stored parsed document output is corrupted or unreadable.",
+                status_code=500,
+                error_code="DOCUMENT_PARSED_INVALID",
+                details={"document_id": document_id},
+            ) from exc
 
     def _extract_text(self, storage_path: Path, file_extension: str) -> tuple[str, str]:
         """Dispatch to the appropriate parser based on the stored file extension."""
@@ -335,6 +411,101 @@ class DocumentService:
         normalized_text = re.sub(r"\n{3,}", "\n\n", normalized_text)
         return normalized_text.strip()
 
+    @staticmethod
+    def _clean_text_for_chunking(extracted_text: str) -> str:
+        """Apply lightweight cleanup so chunk boundaries are more stable and useful."""
+        cleaned_text = extracted_text.replace("\r\n", "\n").replace("\r", "\n")
+        cleaned_text = re.sub(r"[ \t]+", " ", cleaned_text)
+        cleaned_text = re.sub(r"\n[ \t]+", "\n", cleaned_text)
+        cleaned_text = re.sub(r"\n{3,}", "\n\n", cleaned_text)
+        return cleaned_text.strip()
+
+    @staticmethod
+    def _validate_chunk_settings(chunk_size: int, chunk_overlap: int) -> None:
+        """Ensure chunking settings are valid before generating offsets and overlaps."""
+        if chunk_size <= 0:
+            raise AppException(
+                message="Document chunk size must be greater than zero.",
+                status_code=500,
+                error_code="DOCUMENT_CHUNK_CONFIG_INVALID",
+                details={"document_chunk_size": chunk_size},
+            )
+        if chunk_overlap < 0 or chunk_overlap >= chunk_size:
+            raise AppException(
+                message="Document chunk overlap must be zero or greater and smaller than chunk size.",
+                status_code=500,
+                error_code="DOCUMENT_CHUNK_CONFIG_INVALID",
+                details={
+                    "document_chunk_size": chunk_size,
+                    "document_chunk_overlap": chunk_overlap,
+                },
+            )
+
+    def _split_text_into_chunks(
+        self,
+        *,
+        document_id: str,
+        cleaned_text: str,
+        chunk_size: int,
+        chunk_overlap: int,
+    ) -> list[DocumentChunk]:
+        """Split cleaned text into overlapping chunks, preferring paragraph-like boundaries."""
+        chunks: list[DocumentChunk] = []
+        start_index = 0
+        text_length = len(cleaned_text)
+        step_size = chunk_size - chunk_overlap
+
+        while start_index < text_length:
+            tentative_end = min(start_index + chunk_size, text_length)
+            end_index = self._find_chunk_boundary(cleaned_text, start_index, tentative_end)
+            chunk_text = cleaned_text[start_index:end_index].strip()
+ 
+            if not chunk_text:
+                start_index = min(start_index + step_size, text_length)
+                continue
+
+            chunk_index = len(chunks)
+            chunks.append(
+                DocumentChunk(
+                    chunk_id=f"{document_id}-chunk-{chunk_index:04d}",
+                    chunk_index=chunk_index,
+                    text=chunk_text,
+                    char_count=len(chunk_text),
+                    start_char_index=start_index,
+                    end_char_index=end_index,
+                    preview_text=self._build_chunk_preview_text(chunk_text),
+                )
+            )
+
+            if end_index >= text_length:
+                break
+
+            next_start_index = max(end_index - chunk_overlap, start_index + 1)
+            start_index = next_start_index
+
+        return chunks
+
+    @staticmethod
+    def _find_chunk_boundary(cleaned_text: str, start_index: int, tentative_end: int) -> int:
+        """Prefer paragraph and sentence boundaries so chunks read more naturally."""
+        if tentative_end >= len(cleaned_text):
+            return len(cleaned_text)
+
+        boundary_window = cleaned_text[start_index:tentative_end]
+        for marker in ("\n\n", "\n", "。", "！", "？", ".", "!", "?", "；", ";", "，", ",", " "):
+            boundary_index = boundary_window.rfind(marker)
+            if boundary_index > 0:
+                return start_index + boundary_index + len(marker)
+
+        return tentative_end
+
+    def _build_chunk_preview_text(self, chunk_text: str) -> str:
+        """Build a short preview string for chunk-level response payloads."""
+        preview_limit = self.settings.document_chunk_preview_limit
+        if len(chunk_text) <= preview_limit:
+            return chunk_text
+        return f"{chunk_text[:preview_limit].rstrip()}..."
+
     def _build_preview_text(self, extracted_text: str) -> str:
         """Create a short preview for API responses without returning the full parsed text."""
         if len(extracted_text) <= self.preview_text_limit:
@@ -363,6 +534,10 @@ class DocumentService:
     def _get_parsed_directory(self) -> Path:
         """Return the directory used for parsed text output files."""
         return Path(self.settings.documents_storage_dir) / self.parsed_directory_name
+
+    def _get_chunks_directory(self) -> Path:
+        """Return the directory used for parsed document chunk output files."""
+        return Path(self.settings.documents_storage_dir) / self.chunks_directory_name
 
     @staticmethod
     def _remove_partial_file(storage_path: Path) -> None:

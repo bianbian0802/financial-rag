@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     documents_storage_dir: str = "data/documents"
     documents_max_upload_size_mb: int = 25
     documents_chunk_size_bytes: int = 1048576
+    document_chunk_size: int = 800
+    document_chunk_overlap: int = 120
+    document_chunk_preview_limit: int = 180
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
     llm_chat_model: str = "gpt-4o-mini"
