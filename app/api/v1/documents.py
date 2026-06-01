@@ -3,7 +3,12 @@
 from fastapi import APIRouter, Depends, File, UploadFile
 
 from app.core.config import Settings, get_settings
-from app.schemas.document import DocumentChunkResponse, DocumentParseResponse, DocumentUploadResponse
+from app.schemas.document import (
+    DocumentChunkResponse,
+    DocumentEmbeddingResponse,
+    DocumentParseResponse,
+    DocumentUploadResponse,
+)
 from app.services.document_service import DocumentService
 
 router = APIRouter()
@@ -51,3 +56,16 @@ def chunk_document(
 ) -> DocumentChunkResponse:
     """Load a parsed document and split its text into reusable chunks for downstream RAG work."""
     return service.chunk_document(document_id)
+
+
+@router.post(
+    "/documents/{document_id}/embed",
+    response_model=DocumentEmbeddingResponse,
+    summary="Generate embeddings for a chunked document",
+)
+async def embed_document(
+    document_id: str,
+    service: DocumentService = Depends(get_document_service),
+) -> DocumentEmbeddingResponse:
+    """Load a chunked document and generate dense vectors for each chunk."""
+    return await service.embed_document(document_id)

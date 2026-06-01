@@ -58,6 +58,7 @@ financial-rag/
     day9-notes.md
     day10-notes.md
     day11-notes.md
+    day12-notes.md
   app/
     api/
       v1/
@@ -362,3 +363,24 @@ DOCUMENT_CHUNK_PREVIEW_LIMIT=180
 4. 每个 chunk 在原清洗文本中的起止位置
 
 更详细的 Day11 说明见 `docs/day11-notes.md`。
+
+## 20. Day12 新增内容
+
+Day12 的目标是把 Day11 的 chunk 继续转换成向量，进入真正的检索准备阶段。
+本次新增能力：
+1. 新增 `POST /api/v1/documents/{document_id}/embed`
+2. 直接读取 Day11 的 chunk JSON，不重复切片
+3. 调用 OpenAI-compatible `embeddings` 接口生成向量
+4. 支持批量 embedding，减少重复请求
+5. 将结果落盘到 `data/documents/embeddings/*.json`
+
+当前新增配置：
+```env
+EMBEDDING_BASE_URL=http://127.0.0.1:11434/v1
+EMBEDDING_API_KEY=ollama
+EMBEDDING_MODEL=qwen3-embedding:0.6b
+EMBEDDING_BATCH_SIZE=8
+EMBEDDING_TIMEOUT_SECONDS=60
+```
+
+更详细的 Day12 说明见 `docs/day12-notes.md`。

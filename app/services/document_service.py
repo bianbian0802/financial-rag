@@ -5,8 +5,10 @@ import logging
 import re
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 from uuid import uuid4
 
+import httpx
 from docx import Document as WordDocument
 from fastapi import UploadFile
 from pydantic import ValidationError
@@ -17,6 +19,9 @@ from app.core.exceptions import AppException
 from app.schemas.document import (
     DocumentChunk,
     DocumentChunkResponse,
+    DocumentEmbeddingResponse,
+    EmbeddedDocumentChunk,
+    EmbeddingUsage,
     DocumentParseResponse,
     DocumentUploadResponse,
     ParsedDocumentRecord,
@@ -33,6 +38,7 @@ class DocumentService:
     metadata_directory_name = "metadata"
     parsed_directory_name = "parsed"
     chunks_directory_name = "chunks"
+    embeddings_directory_name = "embeddings"
     preview_text_limit = 240
 
     def __init__(self, settings: Settings) -> None:
@@ -213,6 +219,101 @@ class DocumentService:
 
         return chunk_response
 
+    async def embed_document(self, document_id: str) -> DocumentEmbeddingResponse:
+        """Load chunked text for a document, generate embeddings, and persist the vectors."""
+        chunk_record = self._load_chunked_document(document_id)
+        if not chunk_record.chunks:
+            raise AppException(
+                message="The chunked document does not contain any chunks to embed.",
+                status_code=422,
+                error_code="DOCUMENT_EMBED_EMPTY",
+                details={"document_id": document_id},
+            )
+
+        self._validate_embedding_settings()
+
+        embedded_chunks: list[EmbeddedDocumentChunk] = []
+        total_prompt_tokens = 0
+        total_tokens = 0
+        batch_size = self.settings.embedding_batch_size
+        chunk_group_size = max(1, batch_size)
+
+        logger.info(
+            "Embedding document %s with %s chunks using batch size %s.",
+            document_id,
+            len(chunk_record.chunks),
+            chunk_group_size,
+        )
+
+        for batch_start in range(0, len(chunk_record.chunks), chunk_group_size):
+            batch = chunk_record.chunks[batch_start : batch_start + chunk_group_size]
+            embeddings, usage = await self._request_embeddings([chunk.text for chunk in batch])
+            if len(embeddings) != len(batch):
+                raise AppException(
+                    message="Embedding provider returned an unexpected number of vectors.",
+                    status_code=502,
+                    error_code="DOCUMENT_EMBEDDING_RESPONSE_INVALID",
+                    details={
+                        "expected_count": len(batch),
+                        "received_count": len(embeddings),
+                    },
+                )
+
+            if usage is not None:
+                total_prompt_tokens += usage.prompt_tokens
+                total_tokens += usage.total_tokens
+
+            for chunk, embedding in zip(batch, embeddings, strict=True):
+                embedded_chunks.append(
+                    EmbeddedDocumentChunk(
+                        chunk_id=chunk.chunk_id,
+                        chunk_index=chunk.chunk_index,
+                        text=chunk.text,
+                        char_count=chunk.char_count,
+                        start_char_index=chunk.start_char_index,
+                        end_char_index=chunk.end_char_index,
+                        preview_text=chunk.preview_text,
+                        embedding=embedding,
+                        embedding_dimensions=len(embedding),
+                    )
+                )
+
+        embedding_dimensions = embedded_chunks[0].embedding_dimensions
+        embeddings_directory = self._get_embeddings_directory()
+        embeddings_directory.mkdir(parents=True, exist_ok=True)
+        embeddings_output_path = embeddings_directory / f"{document_id}.json"
+        embedded_at = datetime.now(UTC)
+        usage_payload = None
+        if total_prompt_tokens or total_tokens:
+            usage_payload = EmbeddingUsage(
+                prompt_tokens=total_prompt_tokens,
+                total_tokens=total_tokens,
+            )
+
+        embedding_response = DocumentEmbeddingResponse(
+            document_id=document_id,
+            source_chunks_output_path=chunk_record.chunks_output_path,
+            embedding_model=self._get_embedding_model(),
+            provider="openai-compatible",
+            chunk_count=len(embedded_chunks),
+            embedding_dimensions=embedding_dimensions,
+            embeddings_output_path=str(embeddings_output_path.as_posix()),
+            status="embedded",
+            usage=usage_payload,
+            embedded_at=embedded_at,
+            embedded_chunks=embedded_chunks,
+        )
+        self._write_json_file(embeddings_output_path, embedding_response.model_dump(mode="json"))
+
+        logger.info(
+            "Document %s embedded successfully into %s vectors with dimension %s.",
+            document_id,
+            len(embedded_chunks),
+            embedding_dimensions,
+        )
+
+        return embedding_response
+
     def _validate_filename(self, filename: str | None) -> None:
         """Ensure the client provided a supported filename before reading any content."""
         if not filename:
@@ -320,6 +421,28 @@ class DocumentService:
                 message="Stored parsed document output is corrupted or unreadable.",
                 status_code=500,
                 error_code="DOCUMENT_PARSED_INVALID",
+                details={"document_id": document_id},
+            ) from exc
+
+    def _load_chunked_document(self, document_id: str) -> DocumentChunkResponse:
+        """Load the persisted chunk document record produced by the Day11 chunk step."""
+        chunks_output_path = self._get_chunks_directory() / f"{document_id}.json"
+        if not chunks_output_path.exists():
+            raise AppException(
+                message="No chunked document was found for the provided document ID.",
+                status_code=404,
+                error_code="DOCUMENT_CHUNKED_NOT_FOUND",
+                details={"document_id": document_id},
+            )
+
+        try:
+            chunk_payload = json.loads(chunks_output_path.read_text(encoding="utf-8"))
+            return DocumentChunkResponse.model_validate(chunk_payload)
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise AppException(
+                message="Stored chunked document output is corrupted or unreadable.",
+                status_code=500,
+                error_code="DOCUMENT_CHUNKED_INVALID",
                 details={"document_id": document_id},
             ) from exc
 
@@ -506,6 +629,151 @@ class DocumentService:
             return chunk_text
         return f"{chunk_text[:preview_limit].rstrip()}..."
 
+    def _validate_embedding_settings(self) -> None:
+        """Ensure embedding configuration is present before calling the provider."""
+        if not self._get_embedding_base_url():
+            raise AppException(
+                message="Embedding base URL is missing. Please configure embedding_base_url or llm_base_url.",
+                status_code=500,
+                error_code="EMBEDDING_BASE_URL_MISSING",
+            )
+        if not self._get_embedding_model():
+            raise AppException(
+                message="Embedding model is missing. Please configure embedding_model in your environment.",
+                status_code=500,
+                error_code="EMBEDDING_MODEL_MISSING",
+            )
+        if not self._get_embedding_api_key() and not self._is_local_base_url(self._get_embedding_base_url()):
+            raise AppException(
+                message="Embedding API key is missing. Please configure embedding_api_key in your environment.",
+                status_code=500,
+                error_code="EMBEDDING_API_KEY_MISSING",
+            )
+        if self.settings.embedding_batch_size <= 0:
+            raise AppException(
+                message="Embedding batch size must be greater than zero.",
+                status_code=500,
+                error_code="EMBEDDING_BATCH_SIZE_INVALID",
+                details={"embedding_batch_size": self.settings.embedding_batch_size},
+            )
+
+    async def _request_embeddings(self, texts: list[str]) -> tuple[list[list[float]], EmbeddingUsage | None]:
+        """Call the configured OpenAI-compatible embeddings endpoint for a batch of texts."""
+        try:
+            async with httpx.AsyncClient(
+                timeout=self.settings.embedding_timeout_seconds,
+                headers=self._build_embedding_headers(),
+            ) as client:
+                response = await client.post(
+                    self._build_embedding_url(),
+                    json={
+                        "model": self._get_embedding_model(),
+                        "input": texts,
+                    },
+                )
+                response.raise_for_status()
+        except httpx.TimeoutException as exc:
+            raise AppException(
+                message="Embedding request timed out.",
+                status_code=504,
+                error_code="EMBEDDING_TIMEOUT",
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            logger.warning("Embedding provider returned error: %s", exc.response.text)
+            raise AppException(
+                message="Embedding provider returned an error.",
+                status_code=502,
+                error_code="EMBEDDING_PROVIDER_ERROR",
+                details={"status_code": exc.response.status_code},
+            ) from exc
+        except httpx.HTTPError as exc:
+            raise AppException(
+                message="Failed to connect to the embedding provider.",
+                status_code=502,
+                error_code="EMBEDDING_CONNECTION_ERROR",
+            ) from exc
+
+        try:
+            response_data = response.json()
+        except ValueError as exc:
+            raise AppException(
+                message="Embedding provider returned a non-JSON response.",
+                status_code=502,
+                error_code="EMBEDDING_RESPONSE_INVALID",
+            ) from exc
+        return self._extract_embedding_vectors(response_data)
+
+    @staticmethod
+    def _extract_embedding_vectors(response_data: dict) -> tuple[list[list[float]], EmbeddingUsage | None]:
+        """Extract embedding vectors and optional usage metadata from provider output."""
+        try:
+            data = response_data["data"]
+        except (KeyError, TypeError) as exc:
+            raise AppException(
+                message="Embedding response format is invalid.",
+                status_code=502,
+                error_code="EMBEDDING_RESPONSE_INVALID",
+            ) from exc
+
+        embeddings: list[list[float]] = []
+        try:
+            for item in sorted(data, key=lambda entry: entry["index"]):
+                embedding = item["embedding"]
+                embeddings.append([float(value) for value in embedding])
+        except (KeyError, TypeError, ValueError) as exc:
+            raise AppException(
+                message="Embedding response format is invalid.",
+                status_code=502,
+                error_code="EMBEDDING_RESPONSE_INVALID",
+            ) from exc
+
+        usage = None
+        raw_usage = response_data.get("usage")
+        if isinstance(raw_usage, dict) and "prompt_tokens" in raw_usage and "total_tokens" in raw_usage:
+            try:
+                usage = EmbeddingUsage(
+                    prompt_tokens=int(raw_usage["prompt_tokens"]),
+                    total_tokens=int(raw_usage["total_tokens"]),
+                )
+            except (TypeError, ValueError) as exc:
+                raise AppException(
+                    message="Embedding response usage format is invalid.",
+                    status_code=502,
+                    error_code="EMBEDDING_USAGE_INVALID",
+                ) from exc
+
+        return embeddings, usage
+
+    def _build_embedding_headers(self) -> dict[str, str]:
+        """Build HTTP headers for the embedding provider request."""
+        headers = {"Content-Type": "application/json"}
+        api_key = self._get_embedding_api_key()
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
+        return headers
+
+    def _build_embedding_url(self) -> str:
+        """Return the full embedding endpoint URL."""
+        return f"{self._get_embedding_base_url().rstrip('/')}/embeddings"
+
+    def _get_embedding_base_url(self) -> str:
+        """Resolve the embedding provider base URL with chat URL as a fallback."""
+        return self.settings.embedding_base_url or self.settings.llm_base_url
+
+    def _get_embedding_api_key(self) -> str:
+        """Resolve the embedding provider API key with chat key as a fallback."""
+        return self.settings.embedding_api_key or self.settings.llm_api_key
+
+    def _get_embedding_model(self) -> str:
+        """Return the configured embedding model."""
+        return self.settings.embedding_model
+
+    @staticmethod
+    def _is_local_base_url(base_url: str) -> bool:
+        """Check whether the configured provider points to a local development host."""
+        hostname = urlparse(base_url).hostname
+        return hostname in {"127.0.0.1", "localhost"}
+
     def _build_preview_text(self, extracted_text: str) -> str:
         """Create a short preview for API responses without returning the full parsed text."""
         if len(extracted_text) <= self.preview_text_limit:
@@ -538,6 +806,10 @@ class DocumentService:
     def _get_chunks_directory(self) -> Path:
         """Return the directory used for parsed document chunk output files."""
         return Path(self.settings.documents_storage_dir) / self.chunks_directory_name
+
+    def _get_embeddings_directory(self) -> Path:
+        """Return the directory used for parsed document embedding output files."""
+        return Path(self.settings.documents_storage_dir) / self.embeddings_directory_name
 
     @staticmethod
     def _remove_partial_file(storage_path: Path) -> None:

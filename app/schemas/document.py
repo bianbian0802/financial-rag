@@ -70,3 +70,39 @@ class DocumentChunkResponse(BaseModel):
     status: str = Field(..., description="Current chunking status.")
     chunked_at: datetime = Field(..., description="UTC timestamp recorded when chunking completed.")
     chunks: list[DocumentChunk] = Field(..., description="Ordered chunk list generated from the source document.")
+
+
+class EmbeddingUsage(BaseModel):
+    """Token usage metadata reported by an embedding provider, when available."""
+
+    prompt_tokens: int = Field(..., ge=0, description="Token count consumed by the embedding request input.")
+    total_tokens: int = Field(..., ge=0, description="Total token count reported for the embedding request.")
+
+
+class EmbeddedDocumentChunk(DocumentChunk):
+    """Chunk payload extended with the generated embedding vector."""
+
+    embedding: list[float] = Field(..., description="Dense vector generated for the chunk text.")
+    embedding_dimensions: int = Field(..., ge=0, description="Length of the embedding vector.")
+
+
+class DocumentEmbeddingResponse(BaseModel):
+    """Response returned after a chunked document is converted into dense vectors."""
+
+    document_id: str = Field(..., description="Stable identifier assigned to the uploaded document.")
+    source_chunks_output_path: str = Field(..., description="Chunk JSON file consumed as the source for embedding generation.")
+    embedding_model: str = Field(..., description="Embedding model used for vector generation.")
+    provider: str = Field(..., description="Embedding provider type used for this document.")
+    chunk_count: int = Field(..., ge=0, description="Number of embedded chunks produced for the document.")
+    embedding_dimensions: int = Field(..., ge=0, description="Dimension count shared by the generated chunk vectors.")
+    embeddings_output_path: str = Field(..., description="Local path of the persisted embedding JSON output.")
+    status: str = Field(..., description="Current embedding status.")
+    usage: EmbeddingUsage | None = Field(
+        default=None,
+        description="Optional provider token usage aggregated across embedding batches.",
+    )
+    embedded_at: datetime = Field(..., description="UTC timestamp recorded when embedding generation completed.")
+    embedded_chunks: list[EmbeddedDocumentChunk] = Field(
+        ...,
+        description="Ordered list of chunk records paired with their generated embeddings.",
+    )

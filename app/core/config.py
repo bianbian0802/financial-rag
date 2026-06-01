@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     document_chunk_size: int = 800
     document_chunk_overlap: int = 120
     document_chunk_preview_limit: int = 180
+    embedding_base_url: str = ""
+    embedding_api_key: str = ""
+    embedding_model: str = "qwen3-embedding:0.6b"
+    embedding_batch_size: int = 8
+    embedding_timeout_seconds: float = 60.0
     llm_base_url: str = "https://api.openai.com/v1"
     llm_api_key: str = ""
     llm_chat_model: str = "gpt-4o-mini"
